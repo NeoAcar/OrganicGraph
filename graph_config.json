@@ -1,0 +1,20 @@
+{
+    "model_type": "graph",
+    "data_dir": "data",
+    "epochs": 100,
+    "batch_size": 64,
+    "lr": 0.001,
+    "use_scheduler": true,
+    "hidden_dim": 64,
+    "num_layers": 3,
+    "heads": 4,
+    "dropout": 0.1,
+    "dim_feedforward": 512,
+    "total_params": 59841,
+    "param_breakdown": {
+        "node_lin": 640,
+        "layers": 50496,
+        "norms": 384,
+        "regressor": 8321
+    }
+}

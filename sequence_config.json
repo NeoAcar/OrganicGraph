@@ -1,0 +1,20 @@
+{
+    "model_type": "sequence",
+    "data_dir": "data",
+    "epochs": 2,
+    "batch_size": 32,
+    "lr": 0.001,
+    "use_scheduler": true,
+    "hidden_dim": 64,
+    "num_layers": 3,
+    "heads": 4,
+    "dropout": 0.1,
+    "dim_feedforward": 512,
+    "total_params": 261249,
+    "param_breakdown": {
+        "embedding": 1792,
+        "transformer_encoder": 249024,
+        "regressor": 2113,
+        "other": 8320
+    }
+}
