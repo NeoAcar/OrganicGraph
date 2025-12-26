@@ -1,0 +1,9 @@
+torch>=2.0.0
+torch_geometric
+rdkit
+pandas
+numpy
+tqdm
+xgboost
+transformers
+scikit-learn
