@@ -7,3 +7,4 @@ tqdm
 xgboost
 transformers
 scikit-learn
+matplotlib

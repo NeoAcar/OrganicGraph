@@ -9,6 +9,8 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 import os
+import matplotlib.pyplot as plt
+import csv
 
 def train_epoch(model, loader, optimizer, criterion, device, mode):
     model.train()
@@ -20,7 +22,7 @@ def train_epoch(model, loader, optimizer, criterion, device, mode):
         if mode == 'graph':
             batch = batch.to(device)
             target = batch.y
-            pred = model(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
+            pred = model(batch).squeeze()
         else:
             inputs, target = batch
             inputs, target = inputs.to(device), target.to(device)
@@ -44,7 +46,7 @@ def evaluate(model, loader, criterion, device, mode):
             if mode == 'graph':
                 batch = batch.to(device)
                 target = batch.y
-                pred = model(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
+                pred = model(batch).squeeze()
             else:
                 inputs, target = batch
                 inputs, target = inputs.to(device), target.to(device)
@@ -58,6 +60,32 @@ def evaluate(model, loader, criterion, device, mode):
             
     rmse = np.sqrt(np.mean((np.array(preds) - np.array(targets))**2))
     return total_loss / len(loader.dataset), rmse
+
+def plot_metrics(history, model_type):
+    epochs = range(1, len(history['train_loss']) + 1)
+    
+    plt.figure(figsize=(12, 5))
+    
+    # Loss Plot
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, history['train_loss'], label='Train Loss')
+    plt.plot(epochs, history['val_loss'], label='Val Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss (MSE)')
+    plt.title(f'{model_type} - Loss Curve')
+    plt.legend()
+    
+    # RMSE Plot
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, history['val_rmse'], label='Val RMSE', color='orange')
+    plt.xlabel('Epochs')
+    plt.ylabel('RMSE')
+    plt.title(f'{model_type} - Validation RMSE')
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.savefig(f'{model_type}_learning_curves.png')
+    print(f"Plots saved to {model_type}_learning_curves.png")
 
 def main():
     parser = argparse.ArgumentParser(description='Train Melting Point Prediction Model')
@@ -76,21 +104,12 @@ def main():
     
     # Load Data
     train_path = os.path.join(args.data_dir, 'train.csv')
-    test_path = os.path.join(args.data_dir, 'test.csv') # Assuming test split exists or we split manually?
-    # The proposal mentions splitting train, val, test. The directory listing showed train.csv and test.csv and sample_submission.csv
-    # Usually test.csv in Kaggle has no targets. 
-    # But proposal says "Data Loading & Preprocessing ... Implement MeltingPointDataset".
-    # And "Training and Evaluation ... We split the dataset into training, validation, and test sets."
-    # AND "Final performance will be reported on the held-out test set"
-    # If the provided 'test.csv' lacks targets (common in competitions), we should split 'train.csv' into train/val/test for our internal evaluation.
-    # We will assume 'train.csv' is our source of labeled data.
     
     full_dataset = None
     tokenizer = None
     
     if args.model_type == 'sequence':
         tokenizer = SmilesTokenizer()
-        # Fit tokenizer or just use predefined? Dataset doesn't really 'fit' it, it uses regex.
     
     full_dataset = MeltingPointDataset(train_path, tokenizer=tokenizer, mode=args.model_type)
     
@@ -106,14 +125,13 @@ def main():
         val_loader = GraphDataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
         test_loader = GraphDataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
     else:
-        train_loader = SeqDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=None) # Default collate handles tensors
+        train_loader = SeqDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=None)
         val_loader = SeqDataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
         test_loader = SeqDataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
         
     # Model Setup
     model = None
     if args.model_type == 'graph':
-        # Derive input dims from a sample
         sample_data = full_dataset[0]
         node_in_dim = sample_data.x.shape[1]
         edge_in_dim = sample_data.edge_attr.shape[1]
@@ -126,6 +144,13 @@ def main():
     criterion = nn.MSELoss()
     
     best_val_rmse = float('inf')
+    history = {'train_loss': [], 'val_loss': [], 'val_rmse': []}
+    
+    # Logging Setup
+    log_file = f'{args.model_type}_training_log.csv'
+    with open(log_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Epoch', 'Train Loss', 'Val Loss', 'Val RMSE'])
     
     for epoch in range(args.epochs):
         train_loss = train_epoch(model, train_loader, optimizer, criterion, device, args.model_type)
@@ -133,11 +158,25 @@ def main():
         
         print(f"Epoch {epoch+1}/{args.epochs} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val RMSE: {val_rmse:.4f}")
         
+        # Determine whether to save
         if val_rmse < best_val_rmse:
             best_val_rmse = val_rmse
             torch.save(model.state_dict(), f"best_{args.model_type}_model.pt")
+        
+        # Update History
+        history['train_loss'].append(train_loss)
+        history['val_loss'].append(val_loss)
+        history['val_rmse'].append(val_rmse)
+        
+        # Write to log file
+        with open(log_file, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([epoch + 1, train_loss, val_loss, val_rmse])
             
     print("Training Complete.")
+    
+    # Plotting
+    plot_metrics(history, args.model_type)
     
     # Final Test
     model.load_state_dict(torch.load(f"best_{args.model_type}_model.pt", map_location=device))

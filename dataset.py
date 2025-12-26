@@ -50,6 +50,7 @@ class MeltingPointDataset(Dataset):
     def _get_fingerprint(self, smile):
         mol = Chem.MolFromSmiles(smile)
         if mol is None:
+            print(f"Invalid SMILES: {smile}")
             # Handle invalid SMILES by returning distinct zero vector or handling error
             # For simplicity, returning zeros (though in practice should probably filter these out)
             return np.zeros((2048,), dtype=np.float32)
@@ -62,25 +63,47 @@ class MeltingPointDataset(Dataset):
     def _get_graph(self, smile, target):
         mol = Chem.MolFromSmiles(smile)
         if mol is None:
-            return Data(x=torch.zeros((1, 1), dtype=torch.float), edge_index=torch.zeros((2, 0), dtype=torch.long), y=target) # Dummy
+            print(f"Invalid SMILES: {smile}")
+            return Data(x=torch.zeros((1, 1), dtype=torch.float), edge_index=torch.zeros((2, 0), dtype=torch.long), y=target)
+
+        # --- ÖNEMLİ EKLEME ---
+        # Erime noktası polariteye bağlıdır, kısmi yükleri hesaplatıyoruz.
+        AllChem.ComputeGasteigerCharges(mol)
+        
+        # Not: Eğer Hidrojenleri ayrı birer node (yuvarlak) olarak görmek istersen:
+        # mol = Chem.AddHs(mol) 
+        # satırını buraya ekleyebilirsin. Ama genelde implicit (aşağıdaki gibi) yeterlidir.
 
         # Atom Features
-        # Features: AtomicNum, Degree, Aromatic, FormalCharge, Hybridization
         atom_features = []
         for atom in mol.GetAtoms():
             feats = [
+                # 1. Temel Kimlik
                 atom.GetAtomicNum(),
+                
+                # 2. Yapısal Bilgiler
                 atom.GetTotalDegree(),
                 int(atom.GetIsAromatic()),
+                int(atom.GetHybridization()),
+                int(atom.IsInRing()), # Atom halkada mı? (Önemli)
+                
+                # 3. ERİME NOKTASI İÇİN KRİTİK FİZİKSEL ÖZELLİKLER
+                # Hidrojen Bağ Potansiyeli (Data'da H yok demiştin, işte buraya ekliyoruz)
+                atom.GetTotalNumHs(), 
+                
+                # Atom Kütlesi (Van der Waals kuvvetleri için - 0.01 ile normalize)
+                atom.GetMass() * 0.01,
+                
+                # Yük Bilgisi (Polarite)
                 atom.GetFormalCharge(),
-                int(atom.GetHybridization())
+                # Gasteiger Partial Charge (Hesaplanamazsa 0.0 ver)
+                float(atom.GetProp('_GasteigerCharge')) if atom.HasProp('_GasteigerCharge') else 0.0
             ]
             atom_features.append(feats)
         
         x = torch.tensor(atom_features, dtype=torch.float)
 
         # Edge Features & Connectivity
-        # Features: BondType (Single=1, Double=2, Triple=3, Aromatic=1.5 -> mapped to integers), IsInRing
         row, col = [], []
         edge_features = []
         
@@ -94,15 +117,18 @@ class MeltingPointDataset(Dataset):
         for bond in mol.GetBonds():
             start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
             
-            # Add bidirectional edges
+            # Add bidirectional edges (Graf yönsüz olduğu için gidiş-dönüş ekliyoruz)
             row += [start, end]
             col += [end, start]
             
             b_type = bond_type_map.get(bond.GetBondType(), 0)
             b_ring = int(bond.IsInRing())
             
-            feat = [b_type, b_ring]
-            edge_features += [feat, feat] # One for each direction
+            # Ekstra: Bağın konjuge olup olmadığı (Erime noktası için kararlılık göstergesi)
+            b_conj = int(bond.GetIsConjugated()) 
+
+            feat = [b_type, b_ring, b_conj]
+            edge_features += [feat, feat] 
 
         edge_index = torch.tensor([row, col], dtype=torch.long)
         edge_attr = torch.tensor(edge_features, dtype=torch.float)
@@ -113,6 +139,7 @@ class MeltingPointDataset(Dataset):
 
     def _get_sequence(self, smile, target):
         if self.tokenizer is None:
+            print("Tokenizer must be provided for sequence mode")
             raise ValueError("Tokenizer must be provided for sequence mode")
         
         token_ids = self.tokenizer.encode(smile)
@@ -123,26 +150,33 @@ class MeltingPointDataset(Dataset):
 # =========================================================================================
 
 class SmilesTokenizer:
-    def __init__(self, max_len=128):
+    def __init__(self, max_len=32):
         self.max_len = max_len
         self.vocab = {"<PAD>": 0, "<UNK>": 1, "<CLS>": 2, "<SEP>": 3, "<MASK>": 4}
         self.inverse_vocab = {0: "<PAD>", 1: "<UNK>", 2: "<CLS>", 3: "<SEP>", 4: "<MASK>"}
         
         # Common SMILES characters
-        chars = [
-            'C', 'N', 'O', 'S', 'F', 'Cl', 'Br', 'I', 'P', 'B', 'H', # Atoms
-            'c', 'n', 'o', 's', # Aromatic
-            '(', ')', '[', ']', '=', '#', '%', '+', '-', '.', '/', '\\', '@', # Symbols
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' # Numbers
+        # ##EMIN##
+        # chars = [
+        #     'C', 'N', 'O', 'S', 'F', 'Cl', 'Br', 'I', 'P', 'B', 'H', # Atoms
+        #     'c', 'n', 'o', 's', # Aromatic
+        #     '(', ')', '[', ']', '=', '#', '%', '+', '-', '.', '/', '\\', '@', # Symbols
+        #     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' # Numbers
+        # ]
+        vocab_list = [
+            'C', 'c', '(', ')', '1', 'O', '=', '2', 'Cl', 'N', 'F', 'Br', 
+            '3', 'S', 'n', '#', '4', '[Si]', 'I', 'P', '5', '6', '7'
         ]
         
-        for i, char in enumerate(chars):
+        for i, char in enumerate(vocab_list):
             self.vocab[char] = i + 5
             self.inverse_vocab[i + 5] = char
             
     def encode(self, smile):
         # Regex to tokenize SMILES (atoms, brackets, etc.)
-        pattern =  r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+        # ##EMIN## simplfy this
+        #pattern =  r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+        pattern = r"(\[[^\]]+\]|Cl|Br|Si|.)"
         regex = re.compile(pattern)
         tokens = [token for token in regex.findall(smile)]
         
