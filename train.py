@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch_geometric.loader import DataLoader as GraphDataLoader
 from torch.utils.data import DataLoader as SeqDataLoader
 from dataset import MeltingPointDataset, SmilesTokenizer
-from models import GATModel, SmilesTransformer
+from models import GTModel, SmilesTransformer
 import argparse
 import numpy as np
 from tqdm import tqdm
@@ -213,7 +213,7 @@ def main():
         sample_data = full_dataset[0]
         node_in_dim = sample_data.x.shape[1]
         edge_in_dim = sample_data.edge_attr.shape[1]
-        model = GATModel(
+        model = GTModel(
             node_in_dim, 
             edge_in_dim, 
             hidden_dim=args.hidden_dim, 

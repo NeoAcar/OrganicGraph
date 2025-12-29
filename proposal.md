@@ -110,8 +110,8 @@ to a single organic compound and contains the following fields:
 ```
 Our approach consists of two main steps: (i) constructing
 molecular graphs from SMILES strings, and (ii) training a
-Graph Attention Network (GAT) for melting point regression.
-In addition to the GAT model, we also include two strong
+Graph Transformer Network (GT) for melting point regression.
+In addition to the GT model, we also include two strong
 baseline models to enable a sound comparison: (a) a classical
 ML model using Morgan fingerprints with XGBoost, and (b)
 a Transformer-based sequence model that operates directly on
@@ -132,18 +132,18 @@ bond, we encode bond type (single, double, triple, aromatic)
 and ring membership as edge features.
 This yields the node feature matrixXv, edge feature matrix
 Xe, and the edge index representation that will be used as
-input to the GAT model.
+input to the GT model.
 
-Graph Attention Network
+Graph Transformer Network
 
 The prediction model is a graph neural network composed
-of stacked GAT layers. At a high level:
+of stacked GT layers. At a high level:
 
 - Node embeddings are initialized with atom features and
-    updated through several GAT layers, where attention
+    updated through several GT layers, where attention
     weights are learned over neighboring atoms using edge
     information.
-- After the final GAT layer, a global pooling operation
+- After the final GT layer, a global pooling operation
     (e.g., global mean or sum pooling) aggregates node
     embeddings into a single graph-level representation.
 - A small feed-forward regression head maps this graph-
@@ -175,11 +175,11 @@ graph-based and sequence-based molecular representations.
 Training and Evaluation
 
 We split the dataset into training, validation, and test sets.
-The GAT parameters are optimized using the Mean Squared
+The GT parameters are optimized using the Mean Squared
 Error (MSE) loss and the Adam optimizer. The fingerprint-
 based [4] XGBoost model and the SMILES Transformer
 model are trained on the same splits to ensure a fair com-
-parison. Hyperparameters such as the number of GAT layers,
+parison. Hyperparameters such as the number of GT layers,
 
 ```
 hidden dimension, learning rate, and pooling type will be

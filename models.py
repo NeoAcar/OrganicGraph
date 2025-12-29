@@ -3,9 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import TransformerConv, global_mean_pool, global_add_pool
 
-# class GATModel(nn.Module):
+# class GTModel(nn.Module):
 #     def __init__(self, node_in_dim, edge_in_dim, hidden_dim=64, num_layers=3, heads=4, dropout=0.1):
-#         super(GATModel, self).__init__()
+#         super(GTModel, self).__init__()
 #         self.node_in_dim = node_in_dim
 #         self.edge_in_dim = edge_in_dim
 #         self.hidden_dim = hidden_dim
@@ -60,9 +60,9 @@ from torch_geometric.nn import TransformerConv, global_mean_pool, global_add_poo
 #         out = self.regressor(x_pool)
 #         return out.squeeze()
 
-class GATModel(nn.Module):
+class GTModel(nn.Module):
     def __init__(self, node_in_dim, edge_in_dim, hidden_dim=64, num_layers=3, heads=4, dropout=0.1):
-        super(GATModel, self).__init__()
+        super(GTModel, self).__init__()
         
         # 1. Node Embedding (Başlangıç Projeksiyonu)
         self.node_lin = nn.Linear(node_in_dim, hidden_dim)
